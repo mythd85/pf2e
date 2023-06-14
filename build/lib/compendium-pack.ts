@@ -8,14 +8,15 @@ import { isObject, setHasElement, sluggify, tupleHasValue } from "@util/misc.ts"
 import fs from "fs";
 import path from "path";
 import coreIconsJSON from "../core-icons.json" assert { type: "json" };
-import { PackError } from "./helpers.ts";
+import { PackError, getFilesRecursively } from "./helpers.ts";
 import { PackEntry } from "./types.ts";
+import { DBFolder, LevelDatabase } from "./level-database.ts";
 
 interface PackMetadata {
     system: string;
     name: string;
     path: string;
-    type: string;
+    type: CompendiumDocumentType;
 }
 
 /** A rule element, possibly an Aura, ChoiceSet, GrantItem */
@@ -50,22 +51,35 @@ const coreIcons = new Set(coreIconsJSON);
 class CompendiumPack {
     packId: string;
     packDir: string;
-    documentType: string;
+    documentType: CompendiumDocumentType;
     systemId: string;
     data: PackEntry[];
+    folders: DBFolder[];
 
-    static outDir = path.resolve(process.cwd(), "static/packs");
-    private static namesToIds = new Map<string, Map<string, string>>();
-    private static packsMetadata = JSON.parse(fs.readFileSync("static/system.json", "utf-8")).packs as PackMetadata[];
+    static outDir = path.resolve(process.cwd(), "dist/packs");
+    static #namesToIds: {
+        [K in Extract<CompendiumDocumentType, "Actor" | "Item" | "JournalEntry" | "Macro" | "RollTable">]: Map<
+            string,
+            Map<string, string>
+        >;
+    } & Record<string, Map<string, Map<string, string>> | undefined> = {
+        Actor: new Map(),
+        Item: new Map(),
+        JournalEntry: new Map(),
+        Macro: new Map(),
+        RollTable: new Map(),
+    };
+
+    static #packsMetadata = JSON.parse(fs.readFileSync("static/system.json", "utf-8")).packs as PackMetadata[];
 
     static LINK_PATTERNS = {
         world: /@(?:Item|JournalEntry|Actor)\[[^\]]+\]|@Compendium\[world\.[^\]]{16}\]|@UUID\[(?:Item|JournalEntry|Actor)/g,
-        compendium: /@Compendium\[pf2e\.(?<packName>[^.]+)\.(?<docName>[^\]]+)\]\{?/g,
-        uuid: /@UUID\[Compendium\.pf2e\.(?<packName>[^.]+)\.(?<docName>[^\]]+)\]\{?/g,
+        compendium: /@Compendium\[pf2e\.(?<packName>[^.]+)\.(?<docType>Actor|Item)\.(?<docName>[^\]]+)\]\{?/g,
+        uuid: /@UUID\[Compendium\.pf2e\.(?<packName>[^.]+)\.(?<docType>Actor|Item)\.(?<docName>[^\]]+)\]\{?/g,
     };
 
-    constructor(packDir: string, parsedData: unknown[]) {
-        const metadata = CompendiumPack.packsMetadata.find(
+    constructor(packDir: string, parsedData: unknown[], parsedFolders: unknown[]) {
+        const metadata = CompendiumPack.#packsMetadata.find(
             (pack) => path.basename(pack.path) === path.basename(packDir)
         );
         if (metadata === undefined) {
@@ -75,14 +89,19 @@ class CompendiumPack {
         this.packId = metadata.name;
         this.documentType = metadata.type;
 
+        if (!this.#isFoldersData(parsedFolders)) {
+            throw PackError(`Folder data supplied for ${this.packId} does not resemble folder source data.`);
+        }
+        this.folders = parsedFolders;
+
         if (!this.#isPackData(parsedData)) {
             throw PackError(`Data supplied for ${this.packId} does not resemble Foundry document source data.`);
         }
 
         this.packDir = packDir;
 
-        CompendiumPack.namesToIds.set(this.packId, new Map());
-        const packMap = CompendiumPack.namesToIds.get(this.packId);
+        CompendiumPack.#namesToIds[this.documentType]?.set(this.packId, new Map());
+        const packMap = CompendiumPack.#namesToIds[this.documentType]?.get(this.packId);
         if (!packMap) {
             throw PackError(`Compendium ${this.packId} (${packDir}) was not found.`);
         }
@@ -150,13 +169,7 @@ class CompendiumPack {
     }
 
     static loadJSON(dirPath: string): CompendiumPack {
-        if (!dirPath.replace(/\/$/, "").endsWith(".db")) {
-            const dirName = path.basename(dirPath);
-            throw PackError(`JSON directory (${dirName}) does not end in ".db"`);
-        }
-
-        const filenames = fs.readdirSync(dirPath);
-        const filePaths = filenames.map((f) => path.resolve(dirPath, f));
+        const filePaths = getFilesRecursively(dirPath);
         const parsedData = filePaths.map((filePath) => {
             const jsonString = fs.readFileSync(filePath, "utf-8");
             const packSource: PackEntry = (() => {
@@ -182,8 +195,27 @@ class CompendiumPack {
             return packSource;
         });
 
+        const folders = ((): DBFolder[] => {
+            const foldersFile = path.resolve(dirPath, "_folders.json");
+            if (fs.existsSync(foldersFile)) {
+                const jsonString = fs.readFileSync(foldersFile, "utf-8");
+                const foldersSource: DBFolder[] = (() => {
+                    try {
+                        return JSON.parse(jsonString);
+                    } catch (error) {
+                        if (error instanceof Error) {
+                            throw PackError(`File ${foldersFile} could not be parsed: ${error.message}`);
+                        }
+                    }
+                })();
+
+                return foldersSource;
+            }
+            return [];
+        })();
+
         const dbFilename = path.basename(dirPath);
-        return new CompendiumPack(dbFilename, parsedData);
+        return new CompendiumPack(dbFilename, parsedData, folders);
     }
 
     #finalize(docSource: PackEntry): string {
@@ -195,17 +227,21 @@ class CompendiumPack {
         }
 
         docSource.flags ??= {};
-        docSource.flags.core = { sourceId: this.#sourceIdOf(docSource._id) };
         if (isActorSource(docSource)) {
+            docSource.effects = [];
+            docSource.flags.core = { sourceId: this.#sourceIdOf(docSource._id, { docType: "Actor" }) };
             this.#assertSizeValid(docSource);
             docSource.system.schema = { version: MigrationRunnerBase.LATEST_SCHEMA_VERSION, lastMigration: null };
             for (const item of docSource.items) {
+                item.effects = [];
                 item.system.schema = { version: MigrationRunnerBase.LATEST_SCHEMA_VERSION, lastMigration: null };
-                CompendiumPack.convertRuleUUIDs(item, { to: "ids", map: CompendiumPack.namesToIds });
+                CompendiumPack.convertRuleUUIDs(item, { to: "ids", map: CompendiumPack.#namesToIds.Item });
             }
         }
 
         if (isItemSource(docSource)) {
+            docSource.effects = [];
+            docSource.flags.core = { sourceId: this.#sourceIdOf(docSource._id, { docType: "Item" }) };
             docSource.system.slug = sluggify(docSource.name);
             docSource.system.schema = { version: MigrationRunnerBase.LATEST_SCHEMA_VERSION, lastMigration: null };
 
@@ -219,13 +255,13 @@ class CompendiumPack {
             }
 
             // Convert uuids with names in GrantItem REs to well-formedness
-            CompendiumPack.convertRuleUUIDs(docSource, { to: "ids", map: CompendiumPack.namesToIds });
+            CompendiumPack.convertRuleUUIDs(docSource, { to: "ids", map: CompendiumPack.#namesToIds.Item });
         }
 
-        const replace = (match: string, packId: string, docName: string): string => {
+        const replace = (match: string, packId: string, docType: string, docName: string): string => {
             if (match.includes("JournalEntryPage")) return match;
 
-            const namesToIds = CompendiumPack.namesToIds.get(packId);
+            const namesToIds = CompendiumPack.#namesToIds[docType]?.get(packId);
             const link = match.replace(/\{$/, "");
             if (namesToIds === undefined) {
                 throw PackError(`${docSource.name} (${this.packId}) has a bad pack reference: ${link}`);
@@ -233,12 +269,12 @@ class CompendiumPack {
 
             const documentId: string | undefined = namesToIds.get(docName);
             if (documentId === undefined) {
-                throw PackError(`${docSource.name} (${this.packId}) has broken link to ${docName} (${packId}).`);
+                throw PackError(`${docSource.name} (${this.packId}) has broken link to ${docName}: ${match}`);
             }
-            const sourceId = this.#sourceIdOf(documentId, { packId });
-            const labelBrace = match.endsWith("{") ? "{" : "";
+            const sourceId = this.#sourceIdOf(documentId, { packId, docType });
+            const labelBraceOrFullLabel = match.endsWith("{") ? "{" : `{${docName}}`;
 
-            return `@UUID[${sourceId}]${labelBrace}`;
+            return `@UUID[${sourceId}]${labelBraceOrFullLabel}`;
         };
 
         return JSON.stringify(docSource)
@@ -246,8 +282,17 @@ class CompendiumPack {
             .replace(CompendiumPack.LINK_PATTERNS.compendium, replace);
     }
 
-    #sourceIdOf(documentId: string, { packId = this.packId } = {}): string {
-        return `Compendium.${this.systemId}.${packId}.${documentId}`;
+    #sourceIdOf(
+        documentId: string,
+        { packId = this.packId, docType }: { packId?: string; docType: "Actor" }
+    ): CompendiumActorUUID;
+    #sourceIdOf(
+        documentId: string,
+        { packId = this.packId, docType }: { packId?: string; docType: "Item" }
+    ): CompendiumItemUUID;
+    #sourceIdOf(documentId: string, { packId = this.packId, docType }: { packId?: string; docType: string }): string;
+    #sourceIdOf(documentId: string, { packId = this.packId, docType }: { packId?: string; docType: string }): string {
+        return `Compendium.${this.systemId}.${packId}.${docType}.${documentId}`;
     }
 
     /** Convert UUIDs in REs to resemble links by name or back again */
@@ -263,10 +308,10 @@ class CompendiumPack {
 
         const toNameRef = (uuid: string): string => {
             const parts = uuid.split(".");
-            const [packId, docId] = parts.slice(2, 4);
+            const [packId, _docType, docId] = parts.slice(2, 6);
             const docName = map.get(packId)?.get(docId);
             if (docName) {
-                return parts.slice(0, 3).concat(docName).join(".");
+                return parts.slice(0, 4).concat(docName).join(".");
             } else {
                 console.debug(`Warning: Unable to find document name corresponding with ${uuid}`);
                 return uuid;
@@ -274,8 +319,8 @@ class CompendiumPack {
         };
 
         const toIDRef = (uuid: string): string => {
-            const match = /(?<=^Compendium\.pf2e\.)([^.]+)\.(.+)$/.exec(uuid);
-            const [, packId, docName] = match ?? [null, null, null];
+            const match = /(?<=^Compendium\.pf2e\.)([^.]+)\.([^.]+)\.(.+)$/.exec(uuid);
+            const [, packId, _docType, docName] = match ?? [null, null, null, null];
             const docId = map.get(packId ?? "")?.get(docName ?? "");
             if (docName && docId) {
                 return uuid.replace(docName, docId);
@@ -314,19 +359,42 @@ class CompendiumPack {
         }
     }
 
-    save(): number {
+    async save(asJson?: boolean): Promise<number> {
+        if (asJson) {
+            return this.saveAsJSON();
+        }
         if (!fs.lstatSync(CompendiumPack.outDir, { throwIfNoEntry: false })?.isDirectory()) {
             fs.mkdirSync(CompendiumPack.outDir);
         }
+        const packDir = path.join(CompendiumPack.outDir, this.packDir);
 
-        fs.writeFileSync(
-            path.resolve(CompendiumPack.outDir, this.packDir),
-            this.data
-                .map((datum) => this.#finalize(datum))
-                .join("\n")
-                .concat("\n")
-        );
+        // If the old folder is not removed the new data will be inserted into the existing db
+        const stats = fs.lstatSync(packDir, { throwIfNoEntry: false });
+        if (stats?.isDirectory()) {
+            fs.rmSync(packDir, { recursive: true });
+        }
+
+        const db = new LevelDatabase(packDir, { packName: path.basename(packDir) });
+        const finalized: PackEntry[] = this.data.map((datum) => JSON.parse(this.#finalize(datum)));
+        await db.createPack(finalized, this.folders);
         console.log(`Pack "${this.packId}" with ${this.data.length} entries built successfully.`);
+
+        return this.data.length;
+    }
+
+    async saveAsJSON(): Promise<number> {
+        const outDir = path.resolve(process.cwd(), "json-assets/packs");
+        if (!fs.lstatSync(outDir, { throwIfNoEntry: false })?.isDirectory()) {
+            fs.mkdirSync(outDir, { recursive: true });
+        }
+
+        const outFile = path.resolve(outDir, `${this.packDir}.json`);
+        if (fs.existsSync(outFile)) {
+            fs.rmSync(outFile, { force: true });
+        }
+        const finalized = this.data.map((datum) => this.#finalize(datum));
+        fs.writeFileSync(outFile, `[${finalized.join(",\n")}]`.concat("\n"));
+        console.log(`File "${this.packDir}.json" with ${this.data.length} entries created successfully.`);
 
         return this.data.length;
     }
@@ -352,6 +420,14 @@ class CompendiumPack {
 
     #isPackData(packData: unknown[]): packData is PackEntry[] {
         return packData.every((maybeDocSource: unknown) => this.#isDocumentSource(maybeDocSource));
+    }
+
+    #isFolderSource(maybeFolderSource: unknown): maybeFolderSource is DBFolder {
+        return isObject(maybeFolderSource) && "_id" in maybeFolderSource && "folder" in maybeFolderSource;
+    }
+
+    #isFoldersData(folderData: unknown[]): folderData is DBFolder[] {
+        return folderData.every((maybeFolderData) => this.#isFolderSource(maybeFolderData));
     }
 
     #assertSizeValid(source: ActorSourcePF2e | ItemSourcePF2e): void {

@@ -2,6 +2,8 @@ import { MeasuredTemplateDocumentPF2e } from "@scene/measured-template-document.
 import { TemplateLayerPF2e } from "./index.ts";
 import { highlightGrid } from "./helpers.ts";
 import { ScenePF2e } from "@scene/index.ts";
+import { ItemPF2e } from "@item";
+import { ActorPF2e } from "@actor";
 
 class MeasuredTemplatePF2e<
     TDocument extends MeasuredTemplateDocumentPF2e<ScenePF2e | null> = MeasuredTemplateDocumentPF2e<ScenePF2e | null>
@@ -44,7 +46,7 @@ class MeasuredTemplatePF2e<
         canvas.stage.on("mousemove", this.#onMouseMove);
         canvas.stage.on("mousedown", this.#onLeftClick);
         canvas.stage.on("rightdown", this.#onRightClick);
-        canvas.app.view.addEventListener("wheel", this.#onMouseWheel, this.#wheelListenerOptions);
+        canvas.app.view.addEventListener?.("wheel", this.#onMouseWheel, this.#wheelListenerOptions);
     }
 
     /** Overriden to ensure preview canvas events are removed (if any) on destruction */
@@ -52,15 +54,15 @@ class MeasuredTemplatePF2e<
         canvas.stage.off("mousemove", this.#onMouseMove);
         canvas.stage.off("mousedown", this.#onLeftClick);
         canvas.stage.off("rightdown", this.#onRightClick);
-        canvas.app.view.removeEventListener("wheel", this.#onMouseWheel, this.#wheelListenerOptions);
+        canvas.app.view.removeEventListener?.("wheel", this.#onMouseWheel, this.#wheelListenerOptions);
         super.destroy(options);
     }
 
-    #onMouseMove = (event: PIXI.InteractionEvent) => {
+    #onMouseMove = (event: PIXI.FederatedPointerEvent) => {
         event.stopPropagation();
         const now = Date.now();
         if (now - this.#moveTime <= 20) return;
-        const center = event.data.getLocalPosition(this.layer);
+        const center = event.getLocalPosition(this.layer);
         const snapped = canvas.grid.getSnappedPosition(center.x, center.y, 2);
         const hexTypes: number[] = [CONST.GRID_TYPES.HEXODDR, CONST.GRID_TYPES.HEXEVENR];
         const direction =
@@ -87,7 +89,9 @@ class MeasuredTemplatePF2e<
         this.destroy();
     };
 
-    #onMouseWheel = (event: WheelEvent) => {
+    #onMouseWheel = (event: Event) => {
+        if (!(event instanceof WheelEvent)) return;
+
         if (event.ctrlKey) {
             event.preventDefault();
             event.stopPropagation();
@@ -102,6 +106,10 @@ class MeasuredTemplatePF2e<
             this.refresh();
         }
     };
+
+    get item(): ItemPF2e<ActorPF2e> | null {
+        return this.document.item;
+    }
 }
 
 interface MeasuredTemplatePF2e<

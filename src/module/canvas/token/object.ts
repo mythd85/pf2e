@@ -1,4 +1,4 @@
-import { ANIMAL_COMPANION_SOURCE_ID } from "@actor/values.ts";
+import { ANIMAL_COMPANION_SOURCE_IDS } from "@actor/values.ts";
 import { EffectPF2e } from "@item";
 import { TokenDocumentPF2e } from "@scene/index.ts";
 import { pick } from "@util";
@@ -16,7 +16,7 @@ class TokenPF2e<TDocument extends TokenDocumentPF2e = TokenDocumentPF2e> extends
     constructor(document: TDocument) {
         super(document);
 
-        this.hearing = new HearingSource(this);
+        this.hearing = new HearingSource({ object: this });
         this.auras = new AuraRenderers(this);
         Object.defineProperty(this, "auras", { configurable: false, writable: false }); // It's ours, Kim!
     }
@@ -120,7 +120,7 @@ class TokenPF2e<TDocument extends TokenDocumentPF2e = TokenDocumentPF2e> extends
             flankingBuddies.some(
                 (b) =>
                     b.actor?.isOfType("character") &&
-                    b.actor.class?.sourceId === ANIMAL_COMPANION_SOURCE_ID &&
+                    ANIMAL_COMPANION_SOURCE_IDS.includes(b.actor.class?.sourceId ?? "") &&
                     b.isAdjacentTo(flankee)
             );
         if (sideBySide) return true;
@@ -142,11 +142,11 @@ class TokenPF2e<TDocument extends TokenDocumentPF2e = TokenDocumentPF2e> extends
         const { value, max, temp } = actor.attributes.hp ?? {};
         const healthPercent = Math.clamped(value, 0, max) / max;
 
-        // Compute the color based on health percentage, this formula is the one core foundry uses
+        // Compute the color based on health percentage, this formula is the one core Foundry uses
         const black = 0x000000;
         const color = number
-            ? PIXI.utils.rgb2hex([0.5 * healthPercent, 0.7 * healthPercent, 0.5 + healthPercent / 2])
-            : PIXI.utils.rgb2hex([1 - healthPercent / 2, healthPercent, 0]);
+            ? Number(Color.fromRGB([0.5 * healthPercent, 0.7 * healthPercent, 0.5 + healthPercent / 2]))
+            : Number(Color.fromRGB([1 - healthPercent / 2, healthPercent, 0]));
 
         // Bar size logic stolen from core
         let h = Math.max(canvas.dimensions.size / 12, 8);
@@ -190,12 +190,14 @@ class TokenPF2e<TDocument extends TokenDocumentPF2e = TokenDocumentPF2e> extends
         this.auras.draw();
     }
 
+    /** @fixme */
     emitHoverIn(): void {
-        this.emit("mouseover", { data: { object: this } });
+        this.emit("mouseover", { interactionData: { object: this } } as unknown as PIXI.FederatedPointerEvent);
     }
 
+    /** @fixme */
     emitHoverOut(): void {
-        this.emit("mouseout", { data: { object: this } });
+        this.emit("mouseout", { interactionData: { object: this } } as unknown as PIXI.FederatedPointerEvent);
     }
 
     /** If Party Vision is enabled, make all player-owned actors count as vision sources for non-GM users */
@@ -312,7 +314,7 @@ class TokenPF2e<TDocument extends TokenDocumentPF2e = TokenDocumentPF2e> extends
     /** Add a callback for when a movement animation finishes */
     override async animate(updateData: Record<string, unknown>, options?: TokenAnimationOptions<this>): Promise<void> {
         await super.animate(updateData, options);
-        if (!this._animation) this.onFinishAnimation();
+        if (!this._animation) this.#onFinishAnimation();
     }
 
     /** Hearing should be updated whenever vision is */
@@ -348,14 +350,14 @@ class TokenPF2e<TDocument extends TokenDocumentPF2e = TokenDocumentPF2e> extends
         this.auras.refresh();
     }
 
-    protected override _onDragLeftStart(event: TokenInteractionEvent<this>): void {
+    protected override _onDragLeftStart(event: TokenPointerEvent<this>): void {
         super._onDragLeftStart(event);
         this.auras.clearHighlights();
     }
 
     /** If a single token (this one) was dropped, re-establish the hover status */
-    protected override async _onDragLeftDrop(event: TokenInteractionEvent<this>): Promise<this["document"][]> {
-        const clones = event.data.clones ?? [];
+    protected override async _onDragLeftDrop(event: TokenPointerEvent<this>): Promise<this["document"][]> {
+        const clones = event.interactionData.clones ?? [];
         const dropped = await super._onDragLeftDrop(event);
 
         if (clones.length === 1) {
@@ -368,7 +370,7 @@ class TokenPF2e<TDocument extends TokenDocumentPF2e = TokenDocumentPF2e> extends
         return dropped;
     }
 
-    protected override _onHoverIn(event: PIXI.InteractionEvent, options?: { hoverOutOthers?: boolean }): boolean {
+    protected override _onHoverIn(event: PIXI.FederatedPointerEvent, options?: { hoverOutOthers?: boolean }): boolean {
         const refreshed = super._onHoverIn(event, options);
         if (refreshed === false) return false;
         this.auras.refresh();
@@ -376,7 +378,7 @@ class TokenPF2e<TDocument extends TokenDocumentPF2e = TokenDocumentPF2e> extends
         return true;
     }
 
-    protected override _onHoverOut(event: PIXI.InteractionEvent): boolean {
+    protected override _onHoverOut(event: PIXI.FederatedPointerEvent): boolean {
         const refreshed = super._onHoverOut(event);
         if (refreshed === false) return false;
         this.auras.refresh();
@@ -391,7 +393,7 @@ class TokenPF2e<TDocument extends TokenDocumentPF2e = TokenDocumentPF2e> extends
     }
 
     /** A callback for when a movement animation for this token finishes */
-    private async onFinishAnimation(): Promise<void> {
+    async #onFinishAnimation(): Promise<void> {
         await this._animation;
         this.auras.refresh();
     }

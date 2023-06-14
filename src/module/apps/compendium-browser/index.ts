@@ -9,7 +9,7 @@ import { UserPF2e } from "@module/user/document.ts";
 import Tagify from "@yaireo/tagify";
 import noUiSlider from "nouislider";
 import { BrowserTabs, PackInfo, SortDirection, SourceInfo, TabData, TabName } from "./data.ts";
-import { Progress } from "./progress.ts";
+import { Progress } from "../progress.ts";
 import * as browserTabs from "./tabs/index.ts";
 import {
     ActionFilters,
@@ -44,7 +44,7 @@ class PackLoader {
         indexFields: string[]
     ): AsyncGenerator<{ pack: CompendiumCollection<CompendiumDocument>; index: CompendiumIndex }, void, unknown> {
         this.loadedPacks[documentType] ??= {};
-        const localize = localizer("PF2E.CompendiumBrowser.ProgressBar");
+        const localize = localizer("PF2E.ProgressBar");
         const sources = this.#getSources();
 
         const progress = new Progress({ steps: packs.length });
@@ -635,6 +635,17 @@ class CompendiumBrowser extends Application {
             this.#clearScrollLimit(true);
         });
 
+        // Create Roll Table button
+        htmlQuery(html, "[data-action=create-roll-table]")?.addEventListener("click", () =>
+            currentTab.createRollTable()
+        );
+
+        // Add to Roll Table button
+        htmlQuery(html, "[data-action=add-to-roll-table]")?.addEventListener("click", async () => {
+            if (!game.tables.contents.length) return;
+            currentTab.addToRollTable();
+        });
+
         // Filters
         const filterContainers = controlArea.querySelectorAll<HTMLDivElement>("div.filtercontainer");
         for (const container of Array.from(filterContainers)) {
@@ -972,7 +983,7 @@ class CompendiumBrowser extends Application {
         }
 
         for (const actor of actors) {
-            await actor.createEmbeddedDocuments("Item", [item.toObject()]);
+            await actor.inventory.add(item, { stack: true });
         }
 
         if (actors.length === 1 && game.user.character && actors[0] === game.user.character) {
@@ -1001,7 +1012,7 @@ class CompendiumBrowser extends Application {
         for (const actor of actors) {
             if (await actor.inventory.removeCoins(item.price.value)) {
                 purchasesSucceeded = purchasesSucceeded + 1;
-                await actor.createEmbeddedDocuments("Item", [item.toObject()]);
+                await actor.inventory.add(item, { stack: true });
             }
         }
 

@@ -5,13 +5,7 @@ import { strikeFromMeleeItem } from "@actor/helpers.ts";
 import { ActorInitiative } from "@actor/initiative.ts";
 import { ModifierPF2e, StatisticModifier } from "@actor/modifiers.ts";
 import { AbilityString, SaveType } from "@actor/types.ts";
-import {
-    SAVE_TYPES,
-    SKILL_DICTIONARY,
-    SKILL_DICTIONARY_REVERSE,
-    SKILL_EXPANDED,
-    SKILL_LONG_FORMS,
-} from "@actor/values.ts";
+import { SAVE_TYPES, SKILL_DICTIONARY, SKILL_EXPANDED, SKILL_LONG_FORMS } from "@actor/values.ts";
 import { ItemPF2e, LorePF2e, MeleePF2e } from "@item";
 import { ItemType } from "@item/data/index.ts";
 import { calculateDC } from "@module/dc.ts";
@@ -24,7 +18,7 @@ import { ArmorStatistic } from "@system/statistic/armor-class.ts";
 import { Statistic } from "@system/statistic/index.ts";
 import { createHTMLElement, objectHasKey, sluggify } from "@util";
 import { NPCFlags, NPCSource, NPCSystemData } from "./data.ts";
-import { NPCSheetPF2e } from "./sheet.ts";
+import { AbstractNPCSheet } from "./sheet.ts";
 import { VariantCloneParams } from "./types.ts";
 
 class NPCPF2e<TParent extends TokenDocumentPF2e | null = TokenDocumentPF2e | null> extends CreaturePF2e<TParent> {
@@ -281,7 +275,7 @@ class NPCPF2e<TParent extends TokenDocumentPF2e | null = TokenDocumentPF2e | nul
             });
             system.attributes.perception = mergeObject(
                 system.attributes.perception,
-                this.perception.getTraceData({ value: "mod", rollable: ["4.12", "5.0"] })
+                this.perception.getTraceData({ value: "mod" })
             );
         }
 
@@ -405,7 +399,7 @@ class NPCPF2e<TParent extends TokenDocumentPF2e | null = TokenDocumentPF2e | nul
                 ? SKILL_EXPANDED[stat.slug]
                 : { ability: "int" as AbilityString, shortform: stat.slug };
             system.skills[shortform] = {
-                ...stat.getTraceData({ rollable: ["4.12", "5.0"] }),
+                ...stat.getTraceData(),
                 base: item?.system.mod.value,
                 isLore: !!stat.lore,
                 itemID: item?.id,
@@ -481,24 +475,6 @@ class NPCPF2e<TParent extends TokenDocumentPF2e | null = TokenDocumentPF2e | nul
             createTrace(statistic, item);
         }
 
-        for (const skill of Object.values(skills)) {
-            const shortForm = skill ? SKILL_DICTIONARY_REVERSE[skill.slug] : null;
-            if (shortForm && skill) {
-                Object.defineProperty(skills, shortForm, {
-                    get: () => {
-                        foundry.utils.logCompatibilityWarning(
-                            `Short-form skill abbreviations such as actor.skills.${shortForm} are deprecated. Use actor.skills.${skill.slug} instead.`,
-                            {
-                                since: "4.12",
-                                until: "5.0",
-                            }
-                        );
-                        return skills[skill.slug];
-                    },
-                });
-            }
-        }
-
         return skills as CreatureSkills;
     }
 
@@ -519,7 +495,7 @@ class NPCPF2e<TParent extends TokenDocumentPF2e | null = TokenDocumentPF2e | nul
                 button.style.width = "auto";
                 button.style.lineHeight = "14px";
                 button.innerHTML = game.i18n.localize("PF2E.ConsumableUseLabel");
-                return `${item.name} - ${game.i18n.localize("ITEM.TypeConsumable")} (${item.quantity}) ${
+                return `${item.name} - ${game.i18n.localize("TYPES.Item.consumable")} (${item.quantity}) ${
                     button.outerHTML
                 }`;
             }
@@ -673,7 +649,7 @@ interface NPCPF2e<TParent extends TokenDocumentPF2e | null = TokenDocumentPF2e |
     readonly _source: NPCSource;
     system: NPCSystemData;
 
-    get sheet(): NPCSheetPF2e<this>;
+    get sheet(): AbstractNPCSheet<this>;
 }
 
 export { NPCPF2e };

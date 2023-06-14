@@ -6,7 +6,7 @@ import { createConsumableFromSpell } from "@item/consumable/spell-consumables.ts
 import { ItemSourcePF2e } from "@item/data/index.ts";
 import { isPhysicalData } from "@item/data/helpers.ts";
 import { Coins } from "@item/physical/data.ts";
-import { DENOMINATIONS } from "@item/physical/values.ts";
+import { DENOMINATIONS, PHYSICAL_ITEM_TYPES } from "@item/physical/values.ts";
 import { DropCanvasItemDataPF2e } from "@module/canvas/drop-canvas-data.ts";
 import { createSheetTags, maintainTagifyFocusInRender, processTagifyInSubmitData } from "@module/sheet/helpers.ts";
 import { eventToRollParams } from "@scripts/sheet-util.ts";
@@ -30,6 +30,7 @@ import {
     htmlQueryAll,
     isObject,
     objectHasKey,
+    setHasElement,
     tupleHasValue,
 } from "@util";
 import { ActorSizePF2e } from "../data/size.ts";
@@ -1030,14 +1031,15 @@ abstract class ActorSheetPF2e<TActor extends ActorPF2e> extends ActorSheet<TActo
         const { actor } = this;
         const itemSource = item.toObject();
 
+        const mystified = game.user.isGM && event.altKey;
+
         // Set effect to unidentified if alt key is held
-        if (game.user.isGM && itemSource.type === "effect") {
-            const altHeld = event.altKey || game.keyboard.isModifierActive(KeyboardManager.MODIFIER_KEYS.ALT);
-            itemSource.system.unidentified ||= altHeld;
+        if (mystified && itemSource.type === "effect") {
+            itemSource.system.unidentified = true;
         }
 
         // mystify the item if the alt key was pressed
-        if (event.altKey && item.isOfType("physical") && isPhysicalData(itemSource)) {
+        if (mystified && item.isOfType("physical") && isPhysicalData(itemSource)) {
             itemSource.system.identification.unidentified = item.getMystifiedData("unidentified");
             itemSource.system.identification.status = "unidentified";
         }
@@ -1059,7 +1061,11 @@ abstract class ActorSheetPF2e<TActor extends ActorPF2e> extends ActorSheet<TActo
                     actor,
                     {},
                     async (heightenedLevel, itemType, spell) => {
-                        const createdItem = await createConsumableFromSpell(itemType, spell, heightenedLevel);
+                        const createdItem = await createConsumableFromSpell(spell, {
+                            type: itemType,
+                            heightenedLevel,
+                            mystified,
+                        });
                         await this._onDropItemCreate(createdItem);
                     },
                     item
@@ -1233,9 +1239,13 @@ abstract class ActorSheetPF2e<TActor extends ActorPF2e> extends ActorSheet<TActo
                             : game.i18n.localize("PF2E.NewPlaceholders.Lore");
                     return { type, img, name };
                 }
-                default:
-                    console.warn(`Unsupported item type ${type}`);
-                    return null;
+                default: {
+                    if (!setHasElement(PHYSICAL_ITEM_TYPES, type)) {
+                        throw ErrorPF2e(`Unsupported item type: ${type}`);
+                    }
+                    const name = game.i18n.localize(`PF2E.NewPlaceholders.${data.type.capitalize()}`);
+                    return { name, type };
+                }
             }
         })();
 

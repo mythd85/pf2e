@@ -4,6 +4,8 @@ import { fontAwesomeIcon, htmlClosest, htmlQuery, htmlQueryAll, sortBy } from "@
 
 /** Extend ActorDirectory to show more information */
 class ActorDirectoryPF2e extends ActorDirectory<ActorPF2e<null>> {
+    static override entryPartial = "systems/pf2e/templates/sidebar/actor-document-partial.hbs";
+
     /** Any additional "folder like" elements (such as parties) that are maintained separately */
     extraFolders: Record<string, boolean> = {};
 
@@ -29,19 +31,7 @@ class ActorDirectoryPF2e extends ActorDirectory<ActorPF2e<null>> {
             ...(await super.getData()),
             parties,
             extraFolders: this.extraFolders,
-            documentPartial: "systems/pf2e/templates/sidebar/actor-document-partial.hbs",
         };
-    }
-
-    /** Overriden to exclude parties and members from the directory tree */
-    static override setupFolders(
-        folders: Folder<EnfolderableDocument>[],
-        documents: ActorPF2e<null>[]
-    ): { root: boolean; content: WorldDocument[]; children: Folder<EnfolderableDocument>[] } {
-        const filteredDocuments = documents.filter(
-            (a) => (a.isOfType("creature") && !a.parties.size) || !a.isOfType("party", "creature")
-        );
-        return super.setupFolders(folders, filteredDocuments);
     }
 
     override activateListeners($html: JQuery<HTMLElement>): void {
@@ -142,8 +132,8 @@ class ActorDirectoryPF2e extends ActorDirectory<ActorPF2e<null>> {
         super._onDragHighlight(event);
     }
 
-    protected override async _handleDroppedDocument(target: HTMLElement, data: ActorSidebarDropData): Promise<void> {
-        await super._handleDroppedDocument(target, data);
+    protected override async _handleDroppedEntry(target: HTMLElement, data: ActorSidebarDropData): Promise<void> {
+        await super._handleDroppedEntry(target, data);
 
         // Handle dragging members to and from parties (if relevant)
         const toPartyId = htmlClosest(target, ".party")?.dataset.documentId;

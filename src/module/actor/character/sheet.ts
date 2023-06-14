@@ -3,17 +3,9 @@ import { CreatureSheetData } from "@actor/creature/index.ts";
 import { MODIFIER_TYPES, createProficiencyModifier } from "@actor/modifiers.ts";
 import { ActorSheetDataPF2e } from "@actor/sheet/data-types.ts";
 import { SaveType } from "@actor/types.ts";
-import {
-    ActionItemPF2e,
-    AncestryPF2e,
-    BackgroundPF2e,
-    ClassPF2e,
-    DeityPF2e,
-    HeritagePF2e,
-    ItemPF2e,
-    LorePF2e,
-} from "@item";
+import { AncestryPF2e, BackgroundPF2e, ClassPF2e, DeityPF2e, FeatPF2e, HeritagePF2e, ItemPF2e, LorePF2e } from "@item";
 import { isSpellConsumable } from "@item/consumable/spell-consumables.ts";
+import { ActionCost, Frequency } from "@item/data/base.ts";
 import { ItemSourcePF2e } from "@item/data/index.ts";
 import { MagicTradition } from "@item/spell/types.ts";
 import { SpellcastingSheetData } from "@item/spellcasting-entry/types.ts";
@@ -24,8 +16,8 @@ import { DropCanvasItemDataPF2e } from "@module/canvas/drop-canvas-data.ts";
 import { PROFICIENCY_RANKS } from "@module/data.ts";
 import { ActorPF2e } from "@module/documents.ts";
 import { MigrationList, MigrationRunner } from "@module/migration/index.ts";
+import { SheetOptions, createSheetTags } from "@module/sheet/helpers.ts";
 import { craft } from "@system/action-macros/crafting/craft.ts";
-import { FlattenedCondition } from "@system/conditions/types.ts";
 import { CheckDC } from "@system/degree-of-success.ts";
 import {
     ErrorPF2e,
@@ -196,7 +188,9 @@ class CharacterSheetPF2e<TActor extends CharacterPF2e> extends CreatureSheetPF2e
 
         // Is the stamina variant rule enabled?
         sheetData.hasStamina = game.settings.get("pf2e", "staminaVariant") > 0;
+
         sheetData.spellcastingEntries = await this.prepareSpellcasting();
+        sheetData.actions = this.#prepareActions();
         sheetData.feats = [...this.actor.feats, this.actor.feats.unorganized];
 
         const craftingFormulas = await this.actor.getCraftingFormulas();
@@ -298,36 +292,12 @@ class CharacterSheetPF2e<TActor extends CharacterPF2e> extends CreatureSheetPF2e
     override async prepareItems(sheetData: ActorSheetDataPF2e<CharacterPF2e>): Promise<void> {
         const actorData = sheetData.actor;
 
-        // Actions
-        type AnnotatedAction = ActionItemPF2e & {
-            encounter?: boolean;
-            exploration?: boolean;
-            downtime?: boolean;
-        };
-        const actions: Record<string, { label: string; actions: AnnotatedAction[] }> = {
-            action: { label: game.i18n.localize("PF2E.ActionsActionsHeader"), actions: [] },
-            reaction: { label: game.i18n.localize("PF2E.ActionsReactionsHeader"), actions: [] },
-            free: { label: game.i18n.localize("PF2E.ActionsFreeActionsHeader"), actions: [] },
-        };
-
         // Skills
         const lores: LorePF2e<TActor>[] = [];
 
         for (const itemData of sheetData.items) {
-            const item = this.actor.items.get(itemData._id, { strict: true });
-
-            // Feats (non-passive feats may show action icons)
-            if (item.isOfType("feat")) {
-                const actionType = item.actionCost?.type;
-                if (actionType) {
-                    itemData.feat = true;
-                    itemData.img = getActionIcon(item.actionCost);
-                    actions[actionType].actions.push(itemData);
-                }
-            }
-
             // Lore Skills
-            else if (itemData.type === "lore") {
+            if (itemData.type === "lore") {
                 itemData.system.icon = this.getProficiencyIcon((itemData.system.proficient || {}).value);
                 itemData.system.hover = CONFIG.PF2E.proficiencyLevels[(itemData.system.proficient || {}).value];
 
@@ -341,27 +311,53 @@ class CharacterSheetPF2e<TActor extends CharacterPF2e> extends CreatureSheetPF2e
 
                 lores.push(itemData);
             }
-
-            // Actions
-            else if (item.isOfType("action")) {
-                itemData.img = getActionIcon(item.actionCost);
-                const actionType = item.actionCost?.type ?? "free";
-                actions[actionType].actions.push(itemData);
-            }
-        }
-
-        // assign mode to actions
-        for (const action of Object.values(actions).flatMap((section) => section.actions)) {
-            action.downtime = action.system.traits.value.includes("downtime");
-            action.exploration = action.system.traits.value.includes("exploration");
-            action.encounter = !(action.downtime || action.exploration);
         }
 
         // Assign and return
         actorData.pfsBoons = this.actor.pfsBoons;
         actorData.deityBoonsCurses = this.actor.deityBoonsCurses;
-        actorData.actions = actions;
         actorData.lores = lores;
+    }
+
+    /** Prepares all ability type items that create an action in the sheet */
+    #prepareActions(): CharacterSheetData["actions"] {
+        const result: CharacterSheetData["actions"] = {
+            combat: {
+                action: { label: game.i18n.localize("PF2E.ActionsActionsHeader"), actions: [] },
+                reaction: { label: game.i18n.localize("PF2E.ActionsReactionsHeader"), actions: [] },
+                free: { label: game.i18n.localize("PF2E.ActionsFreeActionsHeader"), actions: [] },
+            },
+            exploration: [],
+            downtime: [],
+        };
+
+        for (const item of this.actor.items) {
+            if (!item.isOfType("action") && !(item.isOfType("feat") && item.actionCost)) {
+                continue;
+            }
+
+            const traitDescriptions = item.isOfType("feat") ? CONFIG.PF2E.featTraits : CONFIG.PF2E.actionTraits;
+            const action: ActionSheetData = {
+                ...R.pick(item, ["id", "name", "actionCost", "frequency"]),
+                img: getActionIcon(item.actionCost),
+                traits: createSheetTags(traitDescriptions, item.system.traits.value),
+            };
+
+            if (item.isOfType("feat")) {
+                action.feat = item;
+            }
+
+            if (item.system.traits.value.includes("exploration")) {
+                result.exploration.push(action);
+            } else if (item.system.traits.value.includes("downtime")) {
+                result.downtime.push(action);
+            } else {
+                const category = result.combat[item.actionCost?.type ?? "free"];
+                category?.actions.push(action);
+            }
+        }
+
+        return result;
     }
 
     async #prepareCraftingEntries(formulas: CraftingFormula[]): Promise<CraftingEntriesSheetData> {
@@ -1269,9 +1265,6 @@ type CharacterSystemSheetData = CharacterSystemData & {
             singleOption: boolean;
         };
     };
-    effects: {
-        conditions?: FlattenedCondition[];
-    };
     resources: {
         heroPoints: {
             icon: string;
@@ -1309,7 +1302,7 @@ interface CraftingSheetData {
 
 type CharacterSheetTabVisibility = Record<(typeof CHARACTER_SHEET_TABS)[number], boolean>;
 
-interface CharacterSheetData<TActor extends CharacterPF2e> extends CreatureSheetData<TActor> {
+interface CharacterSheetData<TActor extends CharacterPF2e = CharacterPF2e> extends CreatureSheetData<TActor> {
     abpEnabled: boolean;
     ancestry: AncestryPF2e<CharacterPF2e> | null;
     heritage: HeritagePF2e<CharacterPF2e> | null;
@@ -1336,7 +1329,22 @@ interface CharacterSheetData<TActor extends CharacterPF2e> extends CreatureSheet
     showPFSTab: boolean;
     spellcastingEntries: SpellcastingSheetData[];
     tabVisibility: CharacterSheetTabVisibility;
+    actions: {
+        combat: Record<"action" | "reaction" | "free", { label: string; actions: ActionSheetData[] }>;
+        exploration: ActionSheetData[];
+        downtime: ActionSheetData[];
+    };
     feats: FeatGroup[];
+}
+
+interface ActionSheetData {
+    id: string;
+    name: string;
+    img: string;
+    actionCost: ActionCost | null;
+    frequency: Frequency | null;
+    feat?: FeatPF2e;
+    traits: SheetOptions;
 }
 
 interface ClassDCSheetData extends ClassDCData {

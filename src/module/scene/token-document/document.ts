@@ -40,7 +40,10 @@ class TokenDocumentPF2e<TParent extends ScenePF2e | null = ScenePF2e | null> ext
     }
 
     /** Filter trackable attributes for relevance and avoidance of circular references */
-    static override getTrackedAttributes(data: Record<string, unknown> = {}, _path: string[] = []): TokenAttributes {
+    static override getTrackedAttributes(
+        data: Record<string, unknown> = {},
+        _path: string[] = []
+    ): TrackedAttributesDescription {
         // This method is being called with no associated actor: fill from the models
         if (_path.length === 0 && Object.keys(data).length === 0) {
             for (const [type, model] of Object.entries(game.system.model.Actor)) {
@@ -77,7 +80,16 @@ class TokenDocumentPF2e<TParent extends ScenePF2e | null = ScenePF2e | null> ext
         return this.parent;
     }
 
-    protected override _initialize(): void {
+    /** Workaround for https://github.com/foundryvtt/foundryvtt/issues/9467 */
+    protected override _initializeSource(
+        data: Record<string, unknown>,
+        options?: DocumentConstructionContext<TParent>
+    ): this["_source"] {
+        data.delta ??= {};
+        return super._initializeSource(data, options);
+    }
+
+    protected override _initialize(options?: Record<string, unknown>): void {
         this.constructed ??= false;
         this.auras = new Map();
         this._source.flags.pf2e ??= {};
@@ -86,7 +98,7 @@ class TokenDocumentPF2e<TParent extends ScenePF2e | null = ScenePF2e | null> ext
             ? this._source.flags.pf2e.autoscale ?? game.settings.get("pf2e", "tokens.autoscale")
             : false;
 
-        super._initialize();
+        super._initialize(options);
     }
 
     /** Is this token emitting light with a negative value */
@@ -400,25 +412,6 @@ class TokenDocumentPF2e<TParent extends ScenePF2e | null = ScenePF2e | null> ext
         // Workaround for actor-data preparation issue: release token if this is made unlinked while controlled
         if (changed.actorLink === false && this.rendered && this.object?.controlled) {
             this.object.release();
-        }
-
-        // Handle ephemeral changes from synthetic actor
-        if (!this.actorLink && this.parent && changed.actorData) {
-            const preUpdateIcon = this.texture.src;
-            const currentHeight = this.height;
-            // If the Actor data override changed, simulate updating the synthetic Actor
-            this._onUpdateTokenActor(changed.actorData, options, userId);
-            this.reset();
-
-            // Fake some updates to trigger redraw
-            if (currentHeight !== this.height) changed.height = this.height;
-            changed.light = {} as foundry.data.LightSource;
-            if (preUpdateIcon !== this.texture.src) {
-                changed.texture = mergeObject(changed.texture ?? {}, {
-                    src: this.texture.src,
-                }) as foundry.documents.TokenSource["texture"];
-            }
-            delete changed.actorData; // Prevent upstream from doing so a second time
         }
 
         return super._onUpdate(changed, options, userId);

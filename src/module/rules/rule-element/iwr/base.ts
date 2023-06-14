@@ -40,8 +40,8 @@ abstract class IWRRuleElement<TSchema extends IWRRuleSchema> extends RuleElement
         };
     }
 
-    protected override _validateModel(source: SourceFromSchema<IWRRuleSchema>): void {
-        super._validateModel(source);
+    static override validateJoint(source: SourceFromSchema<IWRRuleSchema>): void {
+        super.validateJoint(source);
 
         if (source.type.length === 0) {
             throw Error("must have at least one type");
@@ -80,7 +80,7 @@ abstract class IWRRuleElement<TSchema extends IWRRuleSchema> extends RuleElement
 
     abstract getIWR(value?: number): ImmunityData[] | WeaknessData[] | ResistanceData[];
 
-    override beforePrepareData(): void {
+    override afterPrepareData(): void {
         if (!this.test()) return;
 
         this.type = this.resolveInjectedProperties(this.type);

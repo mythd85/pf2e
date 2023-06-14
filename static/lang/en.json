@@ -1,15 +1,4 @@
 {
-    "ACTOR": {
-        "TypeAnimalCompanion": "Animal Companion",
-        "TypeCharacter": "Player Character",
-        "TypeEidolon": "Eidolon",
-        "TypeFamiliar": "Familiar",
-        "TypeHazard": "Hazard",
-        "TypeLoot": "Loot",
-        "TypeNpc": "NPC",
-        "TypeParty": "Party",
-        "TypeVehicle": "Vehicle"
-    },
     "COMBAT": {
         "Begin": "Begin Encounter",
         "CombatantNotInScene": "The participant {name} is not present in your currently viewed scene.",
@@ -43,30 +32,6 @@
     "DOCUMENT": {
         "Combat": "Encounter",
         "Combats": "Encounters"
-    },
-    "ITEM": {
-        "TypeAction": "Action",
-        "TypeAffliction": "Affliction",
-        "TypeAncestry": "Ancestry",
-        "TypeArmor": "Armor",
-        "TypeBackground": "Background",
-        "TypeBackpack": "Container",
-        "TypeBook": "Book",
-        "TypeClass": "Class",
-        "TypeCondition": "Condition",
-        "TypeConsumable": "Consumable",
-        "TypeDeity": "Deity",
-        "TypeEffect": "Effect",
-        "TypeEquipment": "Equipment",
-        "TypeFeat": "Feat/Feature",
-        "TypeHeritage": "Heritage",
-        "TypeKit": "Kit",
-        "TypeLore": "Lore Skill",
-        "TypeMelee": "NPC Attack",
-        "TypeSpell": "Spell",
-        "TypeSpellcastingentry": "Spellcasting Entry",
-        "TypeTreasure": "Treasure",
-        "TypeWeapon": "Weapon"
     },
     "PF2E": {
         "AbilityBoost": "Ability Boost",
@@ -339,7 +304,8 @@
                         "Label": "Applicable Lore: DC {dc1} ({adjustment1}) or DC {dc2} ({adjustment2})",
                         "Tooltip": "\"Using the applicable Lore usually has an easy or very easy DC (before adjusting for rarity).\" – CRB pg. 506"
                     }
-                }
+                },
+                "SimpleSheet": "Simple NPC Sheet"
             },
             "Party": {
                 "InvalidCampaign": {
@@ -718,9 +684,17 @@
             "FailedToBuyItemWithCharacter": "Could not purchase {item} with {character}.",
             "FailedToBuyItemWithSomeCharacters": "Could not purchase {item} with some of the selected actor(s).",
             "Hint": "Use the tabs above to select a compendium",
-            "ProgressBar": {
-                "LoadingComplete": "Loading complete",
-                "LoadingPack": "Loading {pack}"
+            "RollTable": {
+                "AddDialogText": "Add {count} result(s) to Roll Table?",
+                "AddLabel": "Add to Roll Table",
+                "CreateDialogText": "Create Roll Table with {count} result(s)?",
+                "CreateLabel": "Create Roll Table",
+                "SelectTableTitle": "Select Roll Table",
+                "WeightLabel": "Weight"
+            },
+            "Settings": {
+                "PacksLabel": "Packs",
+                "SourcesLabel": "Sources"
             },
             "TabAction": "Actions",
             "TabBestiary": "Bestiaries",
@@ -730,11 +704,7 @@
             "TabSettings": "Settings",
             "TabSpell": "Spells",
             "TakeLabel": "Take Item",
-            "Title": "Compendium Browser",
-            "Settings": {
-                "PacksLabel": "Packs",
-                "SourcesLabel": "Sources"
-            }
+            "Title": "Compendium Browser"
         },
         "Condition": {
             "ActiveLabel": "Active",
@@ -2604,6 +2574,10 @@
         "ProficiencyLevel3": "Master",
         "ProficiencyLevel4": "Legendary",
         "ProficiencyRankLabel": "Prof",
+        "ProgressBar": {
+            "LoadingComplete": "Loading complete",
+            "LoadingPack": "Loading {pack}"
+        },
         "PropertyRuneLabel1": "Property Rune (1st)",
         "PropertyRuneLabel2": "Property Rune (2nd)",
         "PropertyRuneLabel3": "Property Rune (3rd)",
@@ -5478,6 +5452,7 @@
             "MoveLoot": "Move Items",
             "MoveLootMessage": "How many items do you wish to move?",
             "MoveLootPopupTitle": "Item Quantity",
+            "PartyStash": "the party stash",
             "PermissionError": "A GM must be online in order to loot or stow an item.",
             "PlantMessage": "{planter} plants {quantity} × {item} on {corpse}.",
             "PlantSubtitle": "Plant Item",
@@ -5532,5 +5507,41 @@
     },
     "SIDEBAR": {
         "TabCombat": "Encounter Tracker"
+    },
+    "TYPES": {
+        "Actor": {
+            "character": "Player Character",
+            "eidolon": "Eidolon",
+            "familiar": "Familiar",
+            "hazard": "Hazard",
+            "loot": "Loot",
+            "npc": "NPC",
+            "party": "Party",
+            "vehicle": "Vehicle"
+        },
+        "Item": {
+            "action": "Action",
+            "affliction": "Affliction",
+            "ancestry": "Ancestry",
+            "armor": "Armor",
+            "background": "Background",
+            "backpack": "Container",
+            "book": "Book",
+            "class": "Class",
+            "condition": "Condition",
+            "consumable": "Consumable",
+            "deity": "Deity",
+            "effect": "Effect",
+            "equipment": "Equipment",
+            "feat": "Feat/Feature",
+            "heritage": "Heritage",
+            "kit": "Kit",
+            "lore": "Lore Skill",
+            "melee": "NPC Attack",
+            "spell": "Spell",
+            "spellcastingEntry": "Spellcasting Entry",
+            "treasure": "Treasure",
+            "weapon": "Weapon"
+        }
     }
 }
